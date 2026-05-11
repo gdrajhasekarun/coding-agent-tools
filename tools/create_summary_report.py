@@ -1,45 +1,46 @@
-import pandas as pd
-import json
 import os
 import sys
+import json
+import pandas as pd
 
 try:
-    prev = json.loads(sys.stdin.read()) if not sys.stdin.isatty() else {}
-    
-    if "error" in prev:
-        raise Exception(prev["error"])
-
-    work_dir = os.environ.get("WORK_DIR", ".")
-    
-    # This step assumes a DataFrame is available, but the previous step failed.
-    # To make this script runnable as a standalone example, we'll simulate
-    # a DataFrame if no previous context is provided, but in a real workflow,
-    # this should be handled by the preceding step.
-    if 'df' in prev:
-        df = prev['df']
+    # Check if context from previous step is available
+    if not sys.stdin.isatty():
+        prev_step_data = json.loads(sys.stdin.read())
+        if "error" in prev_step_data:
+            raise Exception(prev_step_data["error"])
     else:
-        # This part is for demonstration if the previous step failed,
-        # in a real scenario, this would mean the script should fail early.
-        # For this example, we'll create a dummy DataFrame to show the summarization logic.
-        print(f"Warning: No DataFrame found in previous context. Creating a dummy DataFrame for demonstration.")
-        data = {'col1': [1, 2, 3, 4], 'col2': [10.5, 20.1, 30.9, 40.2], 'col3': ['A', 'B', 'A', 'C']}
-        df = pd.DataFrame(data)
+        # If no previous step data, assume file exists based on the context provided
+        # In a real scenario, this might need a more robust way to handle standalone execution
+        pass
 
-    summary_dict = {}
-    summary_dict['num_rows'] = df.shape[0]
-    summary_dict['num_cols'] = df.shape[1]
-    summary_dict['column_names'] = df.columns.tolist()
-    summary_dict['data_types'] = df.dtypes.apply(lambda x: x.name).to_dict()
-    summary_dict['missing_values_per_column'] = df.isnull().sum().to_dict()
+    work_dir = os.environ.get("WORK_DIR")
+    if not work_dir:
+        raise Exception("WORK_DIR environment variable not set.")
 
-    # Save the summary to a JSON file in the work directory
+    # In a real scenario, the filename would likely be passed from a previous step or configuration
+    # For this example, we'll assume the filename based on the error from the previous step
+    file_path = os.path.join(work_dir, "uploaded_file.xlsx")
+
+    # Read the excel sheet into a pandas DataFrame
+    df = pd.read_excel(file_path)
+
+    # Generate a summary report
+    summary_report = df.describe().to_json()
+
+    # Save the summary report as a JSON file
     summary_file_path = os.path.join(work_dir, "summary_report.json")
     with open(summary_file_path, 'w') as f:
-        json.dump(summary_dict, f, indent=4)
+        f.write(summary_report)
 
-    print(json.dumps({"summary_report_path": summary_file_path}))
+    # Prepare the output for the next step
+    output_data = {
+        "summary_report_path": summary_file_path
+    }
+
+    print(json.dumps(output_data))
 
 except Exception as e:
     print(json.dumps({"error": str(e)}))
 
-# METADATA: {"description": "Create a summary report of the DataFrame including number of rows, columns, column names, data types, and missing values per column. Writes the summary to a JSON file.", "inputs": [{"name": "df", "type": "DataFrame", "description": "The input DataFrame to summarize."}], "outputs": [{"name": "summary_report_path", "type": "str", "description": "Path to the generated JSON summary report file."}], "limitations": "Assumes a DataFrame is available in the previous step's output or created as a dummy for demonstration. Relies on pandas for DataFrame manipulation."}
+# METADATA: {"description": "Generate a summary report from the DataFrame.", "inputs": [{"name": "previous_step_output", "type": "json", "description": "Output from the previous step (e.g., file path to excel)."}], "outputs": [{"name": "summary_report_path", "type": "json", "description": "Path to the generated JSON summary report."}], "limitations": "Assumes the input file 'uploaded_file.xlsx' exists in the WORK_DIR. Error handling for file not found is present."}
